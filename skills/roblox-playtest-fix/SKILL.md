@@ -11,9 +11,7 @@ description: >-
 
 # Roblox autonomous playtest, UX friction hunter, and closed-loop fixer
 
-Static linters and mocked unit specs verify code structure, but they cannot feel an unresponsive jump-to-flight transition, a modal button that accidentally fires a combat ability underneath, a porch step that snags a character's feet, a skip button hidden behind Roblox's `PlayerList`, or a phase timer that bores a 9-year-old into leaving.
-
-This skill runs **long, self-sustaining playtest-and-fix expeditions** directly inside Roblox Studio. It plays the game through the eyes and hands of its target audience, systematically uncovers functional bugs and irritating control/configuration friction, fixes the root cause in source, verifies the fix in live Play mode, locks in a regression test, and continues to the next gameplay cohort.
+Play the game, reproduce defects, patch source in Edit mode, replay failures, and continue through the selected cohorts with recorded evidence.
 
 ---
 
@@ -22,13 +20,13 @@ This skill runs **long, self-sustaining playtest-and-fix expeditions** directly 
 1. **No fix without live playtest evidence**: Before editing code for any gameplay, control, UI, or pacing issue, reproduce it in Studio Play mode (`start_stop_play(is_start: true)`) and capture concrete before-evidence: the exact input/navigation sequence, console output (`get_console_output`) or live telemetry probe result (`execute_luau`), and a viewport capture (`screen_capture`).
 2. **Never edit scripts while Play mode is running**: Play mode (`Client` / `Server` DataModels) is ephemeral. Always stop Play mode (`start_stop_play(is_start: false)`) and confirm `datamodel_type: "Edit"` via `get_studio_state` before applying code changes.
 3. **Zero drift between disk and Studio**: In Rojo or Script Sync repositories (such as projects with `default.project.json` and `src/`), apply fixes to the tracked files on disk **and** mirror them to the Studio `Edit` DataModel (via `multi_edit` when live sync is not running) so git and Studio stay identical.
-4. **Keep going across the whole expedition**: Do not stop after fixing a single bug. Maintain an active **Playtest Ledger** and work continuously through all five playtest cohorts until the expedition backlog is clean or a hard stop condition is reached.
+4. **Keep going within scope**: Maintain a **Playtest Ledger** across the requested cohorts (all five by default). Each scenario records setup, inputs, expected/actual outcome, device/input, client count, network conditions and PASS/FAIL/BLOCKED. Missing capability or evidence never passes.
 
 ---
 
 ## 2. Harness-agnostic Studio MCP tool contract
 
-This skill works identically across Claude Code, Codex CLI, Antigravity (`agl`), OpenClaw, and Cursor using the official `Roblox_Studio` MCP server:
+Use the official `Roblox_Studio` MCP server across supported harnesses; inspect available tools and mark unsupported scenarios BLOCKED:
 
 | Phase / Action | MCP Tool | Required `datamodel_type` & Discipline |
 |---|---|---|
@@ -36,8 +34,8 @@ This skill works identically across Claude Code, Codex CLI, Antigravity (`agl`),
 | Check mode & DataModels | `get_studio_state` | Confirm `"Edit"` before editing; confirm `"Client"` and `"Server"` after starting Play. |
 | Enter / exit Play mode | `start_stop_play` | `is_start: true` to play; `is_start: false` to return to Edit mode before patching. |
 | Traverse world paths | `character_navigation` | `"Client"`. Navigate by `instance_path` or `x, y, z` to test real physical pathing and collisions. |
-| Simulate keyboard/gamepad | `user_keyboard_input` | `"Client"`. Ordered `keyPress`, `keyDown`, `keyUp`, `textInput`, and `wait` actions. |
-| Simulate mouse/touch UI | `user_mouse_input` | `"Client"`. Ordered `moveTo`, `mouseButtonClick`, `mouseButtonDown`, `mouseButtonUp`, `scrollUp/Down`, `wait`. |
+| Keyboard/controller buttons | `user_keyboard_input` | `"Client"`. Ordered `keyPress`, `keyDown`, `keyUp`, `textInput`, and `wait`; verify the delivered input type. |
+| Mouse input | `user_mouse_input` | `"Client"`. Ordered `moveTo`, `mouseButtonClick`, `mouseButtonDown`, `mouseButtonUp`, `scrollUp/Down`, `wait`; enable device emulation for touch. |
 | Inspect live state & probe | `execute_luau` | `"Client"` (UI, input, camera, local feel), `"Server"` (phases, enemies, authority), or `"Edit"` (unit suites). |
 | Visual evidence | `screen_capture` | Pass descriptive `capture_id` and optional player-eye `camera_position` / `look_at_position`. |
 | Runtime error check | `get_console_output` | Read after every state transition and input sequence to catch stack traces and warnings. |
@@ -74,8 +72,8 @@ When playing each cohort, evaluate the experience through two lenses: **function
 | Friction Pattern | What to Test in Play Mode | How to Fix It |
 |---|---|---|
 | **Slow time-to-first-fun & timer drags** | Measure seconds from join to first character movement and signature action (`< 30s` target). Time phase transitions and post-round summary screens (`Home` phase) after all actions are complete. | Make intro sequences immediately skippable with a clear button; shorten passive end-of-phase summary timers once objectives are banked; keep lobby players free to move and practice abilities. |
-| **CoreGui & mobile thumbzone collisions** | Run the **UI & CoreGui Collision Probe** across phone (`844x390`, `390x844`), tablet (`1024x768`), and desktop (`1920x1080`). Check if top-right buttons collide with Roblox's `PlayerList`, top-left buttons hit `GuiService:GetGuiInset()`, or bottom-right buttons overlap the mobile Jump button. | Offset top-right HUD/skip controls clear of the `PlayerList` footprint, respect `GuiService:GetGuiInset()`, arrange mobile buttons in a right-thumb arc clear of `TouchGui` Jump, and enforce `>= 48x48` px touch targets. |
-| **Banner pile-ups & visual noise** | Trigger a tutorial step, a phase transition toast, and an urgent status banner (e.g., stolen voice or low charge) simultaneously. Check `Highlight` instance count (`<= 31` engine cap). | Suppress or dock lower-priority tutorial cards while an urgent survival banner is visible; pool temporary `Highlight` flashes and destroy them on tween completion. |
+| **CoreGui & mobile thumbzone collisions** | Enable device/controller emulation; verify actual touch/gamepad events. Test phone rotation, movement plus an ability, scrolling, jump and modal focus; inspect visible CoreGui and actual hit targets. | Respect safe areas and visible control bounds; verify touch target sizes on the emulated device. A desktop resize or mouse click alone does not establish touch coverage. |
+| **Banner pile-ups & visual noise** | Trigger tutorial, phase and urgent banners together. Count client `Highlight` instances, including disabled ones, against the documented 255-slot limit; confirm intended effects render. | Prioritize urgent banners; reuse temporary effects and destroy permanently unused highlights. Treat probe output as hypotheses until live inputs and viewport evidence confirm the defect. |
 | **Untelegraphed damage & solo slog tuning** | Fight enemies and bosses solo (`1` player) and in scaled co-op (`2–8+` players). Check whether enemy strikes give a fair `0.4–0.8s` visual+audio telegraph and whether wave counts or boss health feel tedious solo. | Add clear ground/tether telegraphs before damage lands; verify `TeamScale` scales solo/small-group targets down (`0.5` solo) and shrinks remaining thresholds if a teammate disconnects. |
 
 ---
@@ -84,46 +82,26 @@ When playing each cohort, evaluate the experience through two lenses: **function
 
 When invoked to review, playtest, and improve a game, execute this multi-cohort loop autonomously. Do not stop after one finding; cycle through all cohorts until the expedition is complete.
 
-```mermaid
-flowchart TD
-    A["Phase 0: Bind Studio ID, Sync Check & Build 5-Cohort Backlog"] --> B["Phase 1: Enter Play Mode & Run Next Cohort Scenario"]
-    B --> C["Navigate + Send Inputs + Run Live UX/State Probes + Capture Screen/Logs"]
-    C --> D{"Issue or Audience Irritation Found?"}
-    D -- "Yes" --> E["Phase 2: Record Repro Evidence (Pre-Screenshot + Telemetry + Log)"]
-    E --> F["Phase 3: Stop Play Mode -> Trace Root Cause -> Patch Disk & Studio Edit"]
-    F --> G["Run Fast Static Checks (stylua, selene, rojo sourcemap, luau-lsp)"]
-    G --> H["Phase 4: Re-Enter Play Mode -> Replay Exact Scenario & Capture Post-Evidence"]
-    H --> I{"Fix Verified?"}
-    I -- "No (< 3 tries)" --> F
-    I -- "No (3 tries)" --> J["Revert Unverified Experiment, Log Blocker & Advance"]
-    I -- "Yes" --> K["Stop Play Mode -> Add Behavioral Regression Spec -> Commit Atomic Fix"]
-    K --> L{"More Scenarios in Backlog?"}
-    J --> L
-    D -- "No (Scenario Clean)" --> L
-    L -- "Yes" --> B
-    L -- "No" --> M["Phase 5: Full Suite & Multi-Pass QA Gate -> Final Expedition Report"]
-```
-
 ### Phase 0: Session setup, sync check, and expedition backlog
 
 1. **Bind Studio**: Call `list_roblox_studios` and `get_studio_state`. Confirm the target `studio_id` and `placeId`.
-2. **Verify source-to-Studio parity**: If the workspace has disk source (`src/` or `game/src/`), run a fast parity check in `Edit` mode (`execute_luau`) or compare recent modified scripts with `script_read` to confirm Studio's `Edit` DataModel matches disk source before starting.
+2. **Verify source-to-Studio parity**: Discover the project's source mappings and check commands. Compare mapped disk files with complete Studio `Edit` script contents; matching byte/line counts are insufficient. Missing mappings or unreadable source block parity-dependent verification. Use existing formatter, linter, analyzer and test configuration.
 3. **Initialize the 5-Cohort Expedition Backlog**: Tailor these five cohorts to the game's specific loop and record them in your working **Playtest Ledger**:
    - **Cohort 1 — Arrival, Onboarding & First 60 Seconds**: Spawn in lobby, intro/storybook flow, skip controls, character/class picker, tutorial step progression, first transformation/suit equip, and HUD legibility across viewports.
    - **Cohort 2 — 3Cs: Locomotion, Camera & World Traversal**: Ground movement, deceleration, slope alignment, doorway/porch step traversal (`character_navigation`), jump/coyote time, flight takeoff/cruise/landing, dash/teleport aiming, and camera framing/occlusion.
-   - **Cohort 3 — Combat, Abilities & Cross-Platform Input Ergonomics**: Primary and secondary abilities (`user_keyboard_input` + `user_mouse_input`), hold-and-release resilience, cooldown/empty-charge feedback, modal input isolation, enemy telegraphs, and Keyboard/Gamepad/Touch prompt adaptation.
+   - **Cohort 3 — Combat, Abilities & Cross-Platform Input Ergonomics**: Primary/secondary abilities, hold/release through focus loss and device switching, cooldown/empty feedback, modal isolation, telegraphs and input prompts. Use available device/controller simulation controls and verify delivered events; unavailable combinations are BLOCKED.
    - **Cohort 4 — Core Loop Pacing, Recovery Lanes, Compendium & Shop**: Objective collection/banking, safe zones (e.g., Gold Water / shelters), phase transition timing (`Garden -> Hills -> Home`), shop browsing/purchasing/throttling UX, and sound/fixture restoration feedback.
-   - **Cohort 5 — Endgame Finale, Multiplayer Scaling & Edge-Case Recovery**: Boss/finale mechanics (use debug seams like `DebugSetDay(7)` after testing natural transitions), shield/co-op synergy, disconnect/respawn cleanup, and rapid-input stress tests.
+   - **Cohort 5 — Endgame, Multiplayer & Recovery**: Use multi-client simulation with two actual players. Test simultaneous pickup, late join, disconnect during a hold, respawn, finale and consecutive rounds under recorded network delay. Compare both clients and server; solo/debug player counts do not establish multiplayer coverage.
 
 ### Phase 1: Active playtest & live probing (`Play` mode)
 
 For the active cohort scenario:
-1. Call `start_stop_play(is_start: true)` and confirm `"Client"` and `"Server"` DataModels are active.
+1. Start the scenario's solo or multi-client session with available Studio controls; confirm DataModels, actual player count, device/input and network settings. Wait for the scenario's readiness condition with a bounded timeout; otherwise mark BLOCKED.
 2. Play the scenario using real player actions:
    - Use `character_navigation` (`datamodel_type: "Client"`) to walk/run the actual paths between spawns, doors, and objectives.
    - Use `user_keyboard_input` and `user_mouse_input` (`datamodel_type: "Client"`) to press keys, hold abilities, click HUD/modal buttons, and test rapid or overlapping inputs.
    - Use Studio-only debug seams (`DebugSetDay`, `DebugFlyHold`, `DebugAudition`) only when jumping to late-game cohorts or isolating a specific subsystem after testing the natural entry path.
-3. Run the relevant live telemetry probes from [references/playtest-probes.md](references/playtest-probes.md) via `execute_luau` on `"Client"` and `"Server"`.
+3. Run relevant [live probes](references/playtest-probes.md) on the appropriate DataModel. Sample traversal while movement is held, excluding normal acceleration; record sustained blocked time and worst position. Snapshots after release cannot clear a snag.
 4. Call `screen_capture` at key moments and `get_console_output` after every action sequence.
 
 ### Phase 2: Triage & reproduction lock (The Iron Law)
@@ -137,26 +115,20 @@ When an error, unexpected behavior, or control/config irritation surfaces:
 1. Call `start_stop_play(is_start: false)` and confirm `datamodel_type: "Edit"`.
 2. Trace the issue from the UI/input/character symptom to the underlying client controller, shared config, or server system. Prefer fixing systemic ergonomics (such as adding a shared modal input guard, widening a stingy pickup/aim cone, or lowering a tedious timer in `Config.luau`) over brittle one-off patches.
 3. Edit the tracked disk file(s) and immediately apply the identical edit to the Studio `Edit` script via `multi_edit` (if Rojo live sync is not actively syncing).
-4. Run the project's static verification commands from the shell before re-entering Play mode:
-   ```bash
-   stylua --check src tests
-   selene src tests
-   rojo sourcemap default.project.json -o sourcemap.json
-   luau-lsp analyze --definitions .luau-defs/globalTypes.d.luau --sourcemap sourcemap.json src
-   ```
+4. Run the project's discovered static checks before re-entering Play mode. Record each command and exit status; unavailable tools/configuration mean incomplete verification, never PASS.
 
 ### Phase 4: Re-play verification, regression test & atomic commit
 
-1. Call `start_stop_play(is_start: true)` and replay the exact reproduction steps from Phase 2.
+1. Recreate Phase 2's setup, device/input, player count and network conditions, then replay the exact inputs. For intermittent failures, repeat the same number of trials before and after and report failures/attempts.
 2. Capture `screen_capture` (`capture_id: "PostFix_<slug>"`), check `get_console_output`, and re-run the telemetry probe to prove the issue is resolved and zero new warnings/errors appeared.
 3. Call `start_stop_play(is_start: false)` to return to `Edit` mode.
-4. **Lock in a regression check**: Add or extend a behavioral spec in `tests/<System>.spec.luau` (or `tests/studio_qa_audit.luau`) that discriminates the fix, and execute it via `execute_luau` in `Edit` mode (e.g., `python3 game/tests/emit_gameplay_tests.py <Suite>`).
+4. **Lock in a regression check**: Extend the project's existing behavioral suite with a check that fails on the original defect. Execute it in its required runtime; do not substitute Edit-mode mocks for player-input or replication evidence.
 5. Stage the changed files by name (`git add <files>`) and create an atomic conventional commit (`fix(<scope>): <concise description>`) when working on a feature/fix branch, update the **Playtest Ledger**, and **immediately loop back to Phase 1** for the next scenario in the backlog.
 
 ### Phase 5: Self-regulation, circuit breakers & final sign-off
 
 - **3-Strike Circuit Breaker**: If a fix fails live re-verification 3 times in a row, revert the unverified edits in both disk and Studio `Edit` mode, record the root-cause hypothesis and reproduction evidence in the ledger (or file a tracker issue/bead), and move to the next cohort so the run never stalls.
-- **Periodic Integration Check**: Every 3 to 5 completed fixes, run the full behavioral test suite (`python3 game/tests/emit_gameplay_tests.py all`) and the 4-pass Studio QA audit (`roblox-studio-quality-qa`) in `Edit` mode to catch cross-system regressions early.
+- **Periodic Integration Check**: Every 3 to 5 fixes, run the project's behavioral suite and replay affected cross-system flows in their required runtimes. Include consecutive rounds to expose stale state and cleanup failures.
 - **Clean Studio Exit**: Before concluding the session, ensure `start_stop_play(is_start: false)` has returned Studio to `Edit` mode, all temporary probe instances are destroyed, every modified Studio script matches disk source 1:1, and all static and behavioral checks pass.
 
 ---
@@ -164,11 +136,11 @@ When an error, unexpected behavior, or control/config irritation surfaces:
 ## 5. Expedition report format
 
 At the end of the playtest-and-fix run (or at periodic checkpoints during a marathon session), report:
-1. **Expedition Coverage**: Cohorts and scenarios played in live Studio Play mode.
+1. **Expedition Coverage**: Ledger scenarios with setup, expected/actual result, device/input, client count, network conditions and PASS/FAIL/BLOCKED.
 2. **Playtest Ledger (Issues Found & Fixed)**: For each item, list:
    - **Symptom & Audience Impact**: What felt broken, confusing, or irritating.
    - **Before Evidence**: Repro steps, metric/log output, and pre-fix capture ID.
    - **Root Cause & Fix**: `path:line` changed and commit SHA.
    - **After Evidence & Regression Spec**: Post-fix capture ID, live verification result, and spec added.
-3. **Verification Summary**: Exact exit statuses for `stylua`, `selene`, `rojo sourcemap`, `luau-lsp`, `emit_gameplay_tests.py all`, and Studio Play console cleanliness.
+3. **Verification Summary**: Exact commands, exit statuses, runtime evidence and skipped/unavailable checks; compare new console output against the pre-scenario baseline.
 4. **Remaining Open Items**: Any deferred items or 3-strike escalations with reproduction recipes.

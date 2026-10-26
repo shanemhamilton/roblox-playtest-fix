@@ -1,150 +1,122 @@
 # Live Studio Playtest Probes (`execute_luau`)
 
-Use these self-contained `--!strict` Luau snippets with the `Roblox_Studio` MCP `execute_luau` tool during autonomous playtest runs. Every probe cleans up any temporary instances before returning a structured table.
+Run these self-contained `--!strict` Luau probes with Studio MCP `execute_luau`.
 
 ---
 
-## 1. UI, CoreGui & Mobile Thumbzone Collision Probe (`datamodel_type: "Client"`)
+## 1. UI, TouchGui & Highlight Probe (`datamodel_type: "Client"`)
 
-Detects undersized touch targets (`< 48x48` px), button-on-button overlaps, collisions with Roblox's top-right `PlayerList`, topbar inset, or bottom-right mobile Jump zone, and large `Active = true` containers that accidentally swallow camera drag.
+Flags small targets, overlaps and large transparent active containers. Checks visible TouchGui JumpButton bounds when present. Rotation, occlusion, insets and input routing affect results: confirm hits and PlayerList/topbar conflicts manually. Client Highlight counts include disabled instances; Roblox documents a 255-slot limit ([Highlight](https://create.roblox.com/docs/reference/engine/classes/Highlight)). Confirm rendering visually, including client-created highlights.
 
 ```lua
 --!strict
-local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
-local StarterGui = game:GetService("StarterGui")
-
 local player = Players.LocalPlayer
-assert(player, "LocalPlayer missing; run in Client datamodel_type during Play mode")
+assert(player, "LocalPlayer missing; run in Client during Play")
 local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
 local camera = workspace.CurrentCamera
-local viewport = if camera then camera.ViewportSize else Vector2.new(1920, 1080)
-local topLeftInset, _bottomRightInset = GuiService:GetGuiInset()
+assert(camera, "Camera missing")
+local viewport = camera.ViewportSize
 
-local playerListEnabled = true
-pcall(function()
-	playerListEnabled = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList)
-end)
+type Box = { name: string, pos: Vector2, size: Vector2 }
+local buttons: { Box } = {}
+local small: { string } = {}
+local overlaps: { string } = {}
+local jumpHits: { string } = {}
+local swallowing: { string } = {}
 
-type BoxInfo = { name: string, pos: Vector2, size: Vector2 }
-local visibleButtons: { BoxInfo } = {}
-local smallTouchTargets: { string } = {}
-local buttonOverlaps: { string } = {}
-local coreGuiCollisions: { string } = {}
-local inputSwallowingFrames: { string } = {}
-
-local function isEffectivelyVisible(gui: GuiObject): boolean
-	if not gui.Visible then
-		return false
-	end
-	local current: Instance? = gui.Parent
+local function bounds(gui: GuiObject): (Vector2?, Vector2?)
+	local lo = gui.AbsolutePosition
+	local hi = lo + gui.AbsoluteSize
+	local current: Instance? = gui
 	while current and current ~= playerGui do
-		if current:IsA("GuiObject") and not current.Visible then
-			return false
-		end
-		if current:IsA("LayerCollector") and not current.Enabled then
-			return false
+		if current:IsA("GuiObject") then
+			if not current.Visible then
+				return nil, nil
+			end
+			if current ~= gui and current.ClipsDescendants then
+				local p = current.AbsolutePosition
+				local q = p + current.AbsoluteSize
+				lo = Vector2.new(math.max(lo.X, p.X), math.max(lo.Y, p.Y))
+				hi = Vector2.new(math.min(hi.X, q.X), math.min(hi.Y, q.Y))
+			end
+		elseif current:IsA("LayerCollector") and not current.Enabled then
+			return nil, nil
 		end
 		current = current.Parent
 	end
-	return true
+	lo = Vector2.new(math.max(0, lo.X), math.max(0, lo.Y))
+	hi = Vector2.new(math.min(viewport.X, hi.X), math.min(viewport.Y, hi.Y))
+	if hi.X <= lo.X or hi.Y <= lo.Y then
+		return nil, nil
+	end
+	return lo, hi - lo
 end
 
-local function rectIntersectionArea(
-	aPos: Vector2,
-	aSize: Vector2,
-	bPos: Vector2,
-	bSize: Vector2
-): number
-	local ix = math.max(0, math.min(aPos.X + aSize.X, bPos.X + bSize.X) - math.max(aPos.X, bPos.X))
-	local iy = math.max(0, math.min(aPos.Y + aSize.Y, bPos.Y + bSize.Y) - math.max(aPos.Y, bPos.Y))
-	return ix * iy
+local function area(a: Box, b: Box): number
+	local x =
+		math.max(0, math.min(a.pos.X + a.size.X, b.pos.X + b.size.X) - math.max(a.pos.X, b.pos.X))
+	local y =
+		math.max(0, math.min(a.pos.Y + a.size.Y, b.pos.Y + b.size.Y) - math.max(a.pos.Y, b.pos.Y))
+	return x * y
 end
 
-local topRightPlayerListPos = Vector2.new(math.max(0, viewport.X - 180), 0)
-local topRightPlayerListSize = Vector2.new(180, 220)
-local mobileJumpPos = Vector2.new(math.max(0, viewport.X - 140), math.max(0, viewport.Y - 140))
-local mobileJumpSize = Vector2.new(140, 140)
-local viewportArea = math.max(1, viewport.X * viewport.Y)
+local touchGui = playerGui:FindFirstChild("TouchGui")
+local jump = if touchGui then touchGui:FindFirstChild("JumpButton", true) else nil
+local jumpBox: Box? = nil
+if jump and jump:IsA("GuiObject") then
+	local pos, size = bounds(jump)
+	if pos and size then
+		jumpBox = { name = jump:GetFullName(), pos = pos, size = size }
+	end
+end
 
 for _, inst in playerGui:GetDescendants() do
-	if inst:IsA("GuiObject") and isEffectivelyVisible(inst) then
-		local pos = inst.AbsolutePosition
-		local size = inst.AbsoluteSize
-		if inst:IsA("GuiButton") and inst.Active then
-			if size.X < 48 or size.Y < 48 then
-				table.insert(
-					smallTouchTargets,
-					string.format(
-						"%s (%dx%d px)",
-						inst:GetFullName(),
-						math.floor(size.X),
-						math.floor(size.Y)
-					)
-				)
-			end
-			if pos.Y < topLeftInset.Y and pos.X < 160 then
-				table.insert(coreGuiCollisions, inst:GetFullName() .. " overlaps TopBar inset")
-			end
-			if
-				playerListEnabled
-				and rectIntersectionArea(
-						pos,
-						size,
-						topRightPlayerListPos,
-						topRightPlayerListSize
-					)
-					> 16
+	if inst:IsA("GuiObject") and not (touchGui and inst:IsDescendantOf(touchGui)) then
+		local pos, size = bounds(inst)
+		if pos and size then
+			if inst:IsA("GuiButton") and inst.Active then
+				local box = { name = inst:GetFullName(), pos = pos, size = size }
+				if size.X < 48 or size.Y < 48 then
+					table.insert(small, box.name)
+				end
+				if jumpBox and area(box, jumpBox) > 16 then
+					table.insert(jumpHits, box.name)
+				end
+				table.insert(buttons, box)
+			elseif
+				not inst:IsA("GuiButton")
+				and inst.Active
+				and inst.BackgroundTransparency > 0.9
 			then
-				table.insert(
-					coreGuiCollisions,
-					inst:GetFullName() .. " overlaps top-right PlayerList"
-				)
-			end
-			if rectIntersectionArea(pos, size, mobileJumpPos, mobileJumpSize) > 16 then
-				table.insert(
-					coreGuiCollisions,
-					inst:GetFullName() .. " overlaps bottom-right TouchGui Jump"
-				)
-			end
-			table.insert(visibleButtons, { name = inst:GetFullName(), pos = pos, size = size })
-		elseif not inst:IsA("GuiButton") and inst.Active then
-			local areaRatio = (size.X * size.Y) / viewportArea
-			if areaRatio > 0.25 and inst.BackgroundTransparency > 0.9 then
-				table.insert(
-					inputSwallowingFrames,
-					string.format(
-						"%s (Active=true covering %.0f%% of screen)",
-						inst:GetFullName(),
-						areaRatio * 100
-					)
-				)
+				if size.X * size.Y > viewport.X * viewport.Y * 0.25 then
+					table.insert(swallowing, inst:GetFullName())
+				end
 			end
 		end
 	end
 end
-
-for i = 1, #visibleButtons do
-	for j = i + 1, #visibleButtons do
-		local a = visibleButtons[i]
-		local b = visibleButtons[j]
-		local area = rectIntersectionArea(a.pos, a.size, b.pos, b.size)
-		if area > 4 then
-			table.insert(
-				buttonOverlaps,
-				string.format("%s <-> %s (%.0f sq px)", a.name, b.name, area)
-			)
+for i = 1, #buttons do
+	for j = i + 1, #buttons do
+		if area(buttons[i], buttons[j]) > 4 then
+			table.insert(overlaps, buttons[i].name .. " <-> " .. buttons[j].name)
 		end
 	end
 end
-
+local highlights = 0
+for _, inst in game:GetDescendants() do
+	if inst:IsA("Highlight") then
+		highlights += 1
+	end
+end
 return {
-	viewport = { x = viewport.X, y = viewport.Y },
-	visibleButtons = #visibleButtons,
-	smallTouchTargets = smallTouchTargets,
-	buttonOverlaps = buttonOverlaps,
-	coreGuiCollisions = coreGuiCollisions,
-	inputSwallowingFrames = inputSwallowingFrames,
+	visibleButtons = #buttons,
+	smallTouchTargets = small,
+	buttonOverlaps = overlaps,
+	jumpButton = if jumpBox then jumpBox.name else nil,
+	jumpOverlaps = jumpHits,
+	inputSwallowingFrames = swallowing,
+	clientHighlightsIncludingDisabled = highlights,
 }
 ```
 
@@ -152,11 +124,12 @@ return {
 
 ## 2. Traversal Snag, Step-Riser & Camera Occlusion Probe (`datamodel_type: "Client"`)
 
-Run while or immediately after moving the character through doorways, porch steps, bridges, or forest lanes. Detects ankle-height collision snags, uncollidable visual props that still block camera raycasts (`CanQuery == true`), and low camera framing on small rigs.
+Hold movement through the suspect area throughout the two-second sample. The probe excludes the first 0.2 seconds of each continuous input, reports the longest low-speed interval and its position, and marks insufficient sustained input inconclusive. Verify potential snags, step hazards and camera occlusion in play; speed alone is not proof of a collision.
 
 ```lua
 --!strict
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 assert(player, "LocalPlayer missing")
@@ -212,24 +185,39 @@ if camera then
 	end
 end
 
-local horizVel =
-	Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z).Magnitude
-local isSnagged = humanoid.MoveDirection.Magnitude > 0.5 and horizVel < 1.2
-
+local start = os.clock()
+local held, longestHeld, sampled, blocked, longest = 0, 0, 0, 0, 0
+local worstPosition: Vector3? = nil
+while os.clock() - start < 2 do
+	local dt = math.min(RunService.Heartbeat:Wait(), 0.1)
+	if humanoid.MoveDirection.Magnitude > 0.5 then
+		held += dt
+		longestHeld = math.max(longestHeld, held)
+		if held > 0.2 then
+			sampled += dt
+			local velocity = rootPart.AssemblyLinearVelocity
+			local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+			if speed < 1.2 then
+				blocked += dt
+				if blocked > longest then
+					longest = blocked
+					worstPosition = rootPart.Position
+				end
+			else
+				blocked = 0
+			end
+		end
+	else
+		held, blocked = 0, 0
+	end
+end
 return {
-	position = { x = rootPart.Position.X, y = rootPart.Position.Y, z = rootPart.Position.Z },
-	moveDirectionMagnitude = humanoid.MoveDirection.Magnitude,
-	horizontalSpeed = horizVel,
-	verticalSpeed = rootPart.AssemblyLinearVelocity.Y,
-	floorMaterial = tostring(humanoid.FloorMaterial),
-	isSnagged = isSnagged,
+	status = if longestHeld < 0.7 then "inconclusive: insufficient sustained input" else "sampled",
+	sampledSeconds = sampled,
+	longestLowSpeedSeconds = longest,
+	worstPosition = worstPosition,
 	stepHazard = stepHazard,
-	cameraOffset = {
-		x = humanoid.CameraOffset.X,
-		y = humanoid.CameraOffset.Y,
-		z = humanoid.CameraOffset.Z,
-	},
-	cameraHeightAboveRoot = if camera then camera.CFrame.Position.Y - rootPart.Position.Y else 0,
+	cameraHeightAboveRoot = if camera then camera.CFrame.Position.Y - rootPart.Position.Y else nil,
 	cameraPopcluders = cameraPopcluders,
 }
 ```
@@ -319,9 +307,9 @@ return {
 
 ---
 
-## 4. Server Authority, Pacing & Highlight Budget Probe (`datamodel_type: "Server"`)
+## 4. Server Authority & Pacing Probe (`datamodel_type: "Server"`)
 
-Audits server-side game state, player attributes (`InLobby`, suit equip, charge, carried objectives), active `Highlight` count against Roblox's 31-instance limit, and decorative micro-part collision hygiene.
+Audits server-side game state, player attributes (`InLobby`, suit equip, charge, carried objectives), and decorative micro-part collision hygiene.
 
 ```lua
 --!strict
@@ -336,12 +324,9 @@ for _, p in Players:GetPlayers() do
 	})
 end
 
-local activeHighlights = 0
 local collidableTinyParts: { string } = {}
 for _, inst in workspace:GetDescendants() do
-	if inst:IsA("Highlight") and inst.Enabled then
-		activeHighlights += 1
-	elseif inst:IsA("BasePart") then
+	if inst:IsA("BasePart") then
 		if inst.CanCollide and inst.Transparency < 1 and inst.Size.Magnitude < 0.65 then
 			if #collidableTinyParts < 20 then
 				table.insert(collidableTinyParts, inst:GetFullName())
@@ -354,8 +339,6 @@ return {
 	workspaceAttributes = workspace:GetAttributes(),
 	replicatedAttributes = ReplicatedStorage:GetAttributes(),
 	players = playerSnapshots,
-	activeHighlights = activeHighlights,
-	highlightBudgetOk = activeHighlights <= 31,
 	collidableTinyParts = collidableTinyParts,
 }
 ```
@@ -364,57 +347,27 @@ return {
 
 ## 5. Studio Script Inventory & Drift Probe (`datamodel_type: "Edit"`)
 
-Summarizes all `LuaSourceContainer` scripts under `ReplicatedStorage.Shared`, `ServerScriptService.Server`, and `StarterPlayer.StarterPlayerScripts.Client` with byte lengths and line counts so the agent can verify zero drift between disk source and Studio `Edit` mode before and after long fix runs.
+Enumerate every Studio `LuaSourceContainer`, including its exact source or read error. Using the project mapping, compare each mapped disk script's exact source to Studio, accounting for configured transforms. Check both directions for missing, extra, duplicated or ambiguous mappings. Matching lengths or line counts are not parity. A missing mapping, unreadable source, truncated output or unresolved discrepancy is inconclusive, never PASS; read affected scripts individually if needed.
 
 ```lua
 --!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
-local StarterPlayer = game:GetService("StarterPlayer")
-
-local roots: { Instance } = {}
-local sharedRoot = ReplicatedStorage:FindFirstChild("Shared")
-local serverRoot = ServerScriptService:FindFirstChild("Server")
-local starterScripts = StarterPlayer:FindFirstChild("StarterPlayerScripts")
-local clientRoot = if starterScripts then starterScripts:FindFirstChild("Client") else nil
-
-if sharedRoot then
-	table.insert(roots, sharedRoot)
-end
-if serverRoot then
-	table.insert(roots, serverRoot)
-end
-if clientRoot then
-	table.insert(roots, clientRoot)
-end
-
-type ScriptMeta = { path: string, className: string, bytes: number, lines: number }
-local inventory: { ScriptMeta } = {}
-
-for _, root in roots do
-	local list = root:GetDescendants()
-	table.insert(list, 1, root)
-	for _, inst in list do
-		if inst:IsA("LuaSourceContainer") then
-			local src = (inst :: any).Source :: string
-			local _, newlines = string.gsub(src, "\n", "\n")
-			table.insert(inventory, {
-				path = inst:GetFullName(),
-				className = inst.ClassName,
-				bytes = #src,
-				lines = newlines + 1,
-			})
-		end
+type ScriptEntry = { path: string, className: string, source: string?, error: string? }
+local inventory: { ScriptEntry } = {}
+for _, inst in game:GetDescendants() do
+	if inst:IsA("LuaSourceContainer") then
+		local ok, result = pcall(function()
+			return (inst :: any).Source :: string
+		end)
+		table.insert(inventory, {
+			path = inst:GetFullName(),
+			className = inst.ClassName,
+			source = if ok then result else nil,
+			error = if ok then nil else tostring(result),
+		})
 	end
 end
-
-table.sort(inventory, function(a: ScriptMeta, b: ScriptMeta): boolean
+table.sort(inventory, function(a: ScriptEntry, b: ScriptEntry): boolean
 	return a.path < b.path
 end)
-
-return {
-	totalScripts = #inventory,
-	scripts = inventory,
-}
+return { totalScripts = #inventory, scripts = inventory }
 ```
-
