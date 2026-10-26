@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-26
+
 ### Changed
 - Require scenario outcomes, verified device input, and actual multi-client/network evidence; unavailable coverage is BLOCKED.
 - Replace snapshot snag detection with sustained movement sampling, guessed UI rectangles with visible bounds, and script length metadata with complete source for mapped comparison.
