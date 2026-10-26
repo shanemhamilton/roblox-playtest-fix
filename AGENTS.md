@@ -21,8 +21,11 @@ Edit this file, never the symlinks.
 Before committing or releasing any change, run:
 
 ```bash
-python3 tests/validate_skill.py
+python3 tests/validate_skill.py --definitions /path/to/globalTypes.d.luau
+python3 -m unittest discover -s tests
 bash -n install.sh
 ```
 
-When `stylua`, `selene`, and `luau-lsp` are installed on the machine, `python3 tests/validate_skill.py` also validates all 5 embedded `--!strict` Luau probe blocks in `skills/roblox-playtest-fix/references/playtest-probes.md`.
+Install the tools pinned in `aftman.toml`; formatting and lint use repository-owned configuration. Supply Roblox Luau definitions with `--definitions` or `ROBLOX_LUAU_DEFINITIONS`. Validation checks all five embedded probes and fails if any tool/definitions are unavailable; skipped checks never count as PASS. No sibling project checkout is required.
+
+Keep `SKILL.md` and `references/playtest-probes.md` no larger than the pre-change files in bytes, lines and whitespace-delimited words; replace repeated guidance instead of adding length.

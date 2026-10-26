@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Require scenario outcomes, verified device input, and actual multi-client/network evidence; unavailable coverage is BLOCKED.
+- Replace snapshot snag detection with sustained movement sampling, guessed UI rectangles with visible bounds, and script length metadata with complete source for mapped comparison.
+- Count client Highlights including disabled instances against the documented 255-slot limit. Shorten both the main workflow and probe reference.
+- Make probe validation independent of sibling projects, with explicit definitions/configuration and regression checks for incomplete or failed validation.
+
 ## [1.0.0] - 2026-10-26
 
 ### Added

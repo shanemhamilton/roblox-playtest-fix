@@ -17,10 +17,11 @@ Static linters (`stylua`, `selene`, `luau-lsp`) and mocked unit tests verify cod
 - **Hunts target-audience irritation & control friction**: Evaluates every interaction against a concrete friction matrix:
   - *Control & input irritations*: Compound/fussy activations, modal-to-gameplay input bleed, swallowed hold/release events (`UserInputState.Change`), unforgiving aiming without cone/proximity assist, and wrong device prompts (`Keyboard` vs. `Gamepad` vs. `Touch`).
   - *Camera, movement & spatial irritations*: Doorway and step-riser snags (`> 0.4` studs), server anti-cheat rubber-banding or false-positive fall recovery, low camera framing on small rigs, and foliage/props with `CanQuery = true` popping the camera.
-  - *Pacing, UI & configuration irritations*: Slow time-to-first-fun (`> 30s`), unskippable intros or long summary timers, collisions with Roblox's `PlayerList` / TopBar / mobile `TouchGui` Jump button, `< 48x48` px touch targets, `Highlight` pool exhaustion (`> 31` instances), and untelegraphed enemy strikes.
+  - *Pacing, UI & configuration irritations*: Slow time-to-first-fun, unskippable intros, collisions with visible CoreGui / mobile controls, small touch targets, client `Highlight` slot exhaustion (255, including disabled instances), and untelegraphed enemy strikes.
 - **Enforces the Iron Law of Playtest Fixes**: *No fix without live reproduction evidence* (exact input sequence + console/telemetry probe output + `PreFix_<slug>` viewport capture).
 - **Zero drift between disk and Studio**: Stops Play mode (`is_start: false`), patches tracked source files on disk (`src/`) and mirrors edits to Studio `Edit` mode (`multi_edit`) when Rojo live sync is not running, runs static checks, and re-verifies in live Play mode (`PostFix_<slug>`).
-- **Built for long autonomous runs**: Works through a **5-Cohort Expedition Backlog** with a live **Playtest Ledger**, a **3-Strike Circuit Breaker** per defect so runs never stall, and periodic full-suite regression gates.
+- **Evidence-based coverage**: Records expected/actual outcomes and PASS/FAIL/BLOCKED per scenario. Verifies emulated device input and tests two actual clients under recorded latency; solo sessions and desktop resizing cannot establish multiplayer or touch coverage.
+- **Built for long autonomous runs**: Works through the requested cohorts (all five by default), with a **Playtest Ledger**, a **3-Strike Circuit Breaker**, and periodic integration checks.
 
 ---
 
@@ -74,11 +75,23 @@ Invoke the skill in your agent session (`$roblox-playtest-fix` in Codex, `/roblo
 
 [`skills/roblox-playtest-fix/references/playtest-probes.md`](skills/roblox-playtest-fix/references/playtest-probes.md) includes 5 ready-to-run `--!strict` Luau probes:
 
-1. **UI, CoreGui & Mobile Thumbzone Collision Probe (`Client`)**: Finds `< 48x48` px buttons, overlapping controls, collisions with Roblox's top-right `PlayerList`, TopBar inset, or mobile Jump button, and transparent `Active = true` frames swallowing camera drag.
-2. **Traversal Snag, Step-Riser & Camera Occlusion Probe (`Client`)**: Detects ankle-level step risers (`> 0.4` studs), movement snags (`MoveDirection > 0.5` with speed `< 1.2` studs/s), and non-collidable props with `CanQuery = true` blocking the camera.
+1. **UI, TouchGui & Highlight Probe (`Client`)**: Reports clipped visible bounds, small targets, overlapping buttons, actual visible JumpButton overlaps, and client Highlight counts including disabled instances. Confirm hit routing, CoreGui conflicts and rendering in play.
+2. **Traversal Snag, Step-Riser & Camera Occlusion Probe (`Client`)**: Samples held movement for two seconds, excluding initial acceleration; records sustained low-speed time and position. Insufficient input is inconclusive. Also reports potential step and camera obstructions.
 3. **Control Ergonomics, Modal Priority & Prompt Parity Probe (`Client`)**: Audits `ContextActionService` priorities, gamepad `SelectedObject` focus, and keyboard prompt leaks when `PreferredInput` is Touch or Gamepad.
-4. **Server Authority, Pacing & Highlight Budget Probe (`Server`)**: Inspects live phase/player attributes, verifies `Highlight` count `<= 31`, and flags collidable decorative micro-parts (`< 0.65` studs).
-5. **Studio Script Inventory & Drift Probe (`Edit`)**: Summarizes all `LuaSourceContainer` paths, byte counts, and line counts to confirm zero drift between disk source and Studio `Edit` mode.
+4. **Server Authority & Pacing Probe (`Server`)**: Inspects live phase/player attributes and flags small collidable parts for investigation.
+5. **Studio Script Inventory & Drift Probe (`Edit`)**: Returns complete script contents or read errors. Compare against mapped disk source in both directions; matching lengths never establish parity. Missing mappings or truncated output are inconclusive.
+
+## Validate this skill
+
+Install the tools pinned in `aftman.toml`, then supply your Roblox Luau definitions file:
+
+```bash
+python3 tests/validate_skill.py --definitions /path/to/globalTypes.d.luau
+python3 -m unittest discover -s tests
+bash -n install.sh
+```
+
+Alternatively set `ROBLOX_LUAU_DEFINITIONS`. The validator uses this repository's formatter/linter configuration, runs available tools independently, and exits nonzero for missing tools, missing definitions or failed checks. Static validation does not establish live gameplay coverage.
 
 ---
 

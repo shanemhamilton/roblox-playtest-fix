@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -68,55 +70,69 @@ def check_skill_files() -> list[str]:
     return blocks
 
 
-def check_luau_probes(blocks: list[str]) -> None:
-    superfriends_game = REPO_ROOT.parent / "superfriends" / "game"
-    has_selene = shutil.which("selene") is not None
-    has_stylua = shutil.which("stylua") is not None
-    has_luau_lsp = shutil.which("luau-lsp") is not None
-    defs = superfriends_game / ".luau-defs" / "globalTypes.d.luau"
+def check_luau_probes(blocks: list[str], defs: Path | None) -> bool:
+    tools = {name: shutil.which(name) for name in ("stylua", "selene", "luau-lsp")}
+    incomplete = []
+    for name, path in tools.items():
+        if path is None:
+            incomplete.append(f"{name} not found in PATH")
+    if defs is None or not defs.is_file():
+        incomplete.append("Roblox definitions missing; set ROBLOX_LUAU_DEFINITIONS or --definitions")
 
-    if not (superfriends_game.is_dir() and has_selene and has_stylua and has_luau_lsp):
-        print("[info] Skipping external Luau toolchain checks (toolchain not in current PATH)")
-        return
-
+    failed = False
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for idx, code in enumerate(blocks, 1):
-            raw_file = tmp_path / f"raw_{idx}.luau"
-            raw_file.write_text(code, encoding="utf-8")
-            subprocess.run(
-                ["stylua", "--check", "--config-path", "stylua.toml", str(raw_file)],
-                cwd=str(superfriends_game),
-                check=True,
-            )
-
-            body = code.replace("--!strict\n", "", 1)
+            raw = tmp_path / f"raw_{idx}.luau"
+            raw.write_text(code, encoding="utf-8")
             wrapped = tmp_path / f"probe_{idx}.luau"
             wrapped.write_text(
-                "--!strict\nlocal function runProbe()\n" + body + "\nend\nreturn runProbe\n",
+                "--!strict\nlocal function runProbe()\n"
+                + code.removeprefix("--!strict\n")
+                + "\nend\nreturn runProbe\n",
                 encoding="utf-8",
             )
-            subprocess.run(
-                ["selene", "--config", "selene.toml", str(wrapped)],
-                cwd=str(superfriends_game),
-                check=True,
-            )
-            if defs.is_file():
-                subprocess.run(
-                    ["luau-lsp", "analyze", "--definitions", str(defs), str(wrapped)],
-                    cwd=str(superfriends_game),
-                    check=True,
-                )
-    print(f"[ok] Validated {len(blocks)} Luau probes with stylua, selene, and luau-lsp (--!strict)")
+            commands = {
+                "stylua": ["--check", "--config-path", str(REPO_ROOT / "stylua.toml"), str(raw)],
+                "selene": ["--config", str(REPO_ROOT / "selene.toml"), str(wrapped)],
+                "luau-lsp": ["analyze", "--definitions", str(defs), str(wrapped)],
+            }
+            for name, args in commands.items():
+                if tools[name] is None or (name == "luau-lsp" and (defs is None or not defs.is_file())):
+                    continue
+                try:
+                    result = subprocess.run([tools[name], *args], cwd=REPO_ROOT, check=False)
+                    if result.returncode != 0:
+                        print(f"[fail] {name} probe {idx}: exit {result.returncode}")
+                        failed = True
+                except OSError as exc:
+                    print(f"[fail] {name} probe {idx}: {exc}")
+                    failed = True
+    for reason in incomplete:
+        print(f"[incomplete] {reason}")
+    if not failed and not incomplete:
+        print(f"[ok] Validated {len(blocks)} Luau probes with stylua, selene, and luau-lsp")
+    return not failed and not incomplete
 
 
-def main() -> None:
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--definitions", type=Path,
+        default=os.environ.get("ROBLOX_LUAU_DEFINITIONS"),
+        help="path to Roblox Luau definitions (or set ROBLOX_LUAU_DEFINITIONS)",
+    )
+    args = parser.parse_args()
+    defs = Path(args.definitions).expanduser().resolve() if args.definitions else None
     version = check_versions()
     check_symlinks()
     blocks = check_skill_files()
-    check_luau_probes(blocks)
+    if not check_luau_probes(blocks, defs):
+        print("[fail] Luau validation did not pass")
+        return 1
     print(f"[ok] roblox-playtest-fix v{version} passed all validation checks.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
