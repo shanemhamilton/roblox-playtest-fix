@@ -117,7 +117,7 @@ roblox-playtest-fix/
 ├── CLAUDE.md -> AGENTS.md       # Symlink
 ├── GEMINI.md -> AGENTS.md       # Symlink
 ├── CHANGELOG.md                 # Keep a Changelog release history
-├── VERSION                      # SemVer version (1.0.0)
+├── VERSION                      # SemVer version
 └── LICENSE                      # MIT License
 ```
 
