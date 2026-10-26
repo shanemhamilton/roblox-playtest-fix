@@ -1,0 +1,4 @@
+interface:
+  display_name: "Roblox Autonomous Playtest & Fix"
+  short_description: "Playtest a Roblox game in Studio, find annoying controls or bugs, and fix them in long runs"
+  default_prompt: "Use $roblox-playtest-fix to playtest the game in Roblox Studio across all cohorts, find bugs, unexpected behaviors, and annoying controls or configurations for the target audience, and fix and verify them as you go."

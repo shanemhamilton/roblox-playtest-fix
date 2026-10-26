@@ -1,0 +1,29 @@
+{
+  "name": "roblox-playtest-fix",
+  "owner": {
+    "name": "Shane Hamilton",
+    "email": "shanemhamilton@gmail.com"
+  },
+  "description": "Autonomously playtest a Roblox game in Studio via MCP, detect annoying controls and target-audience UX friction, and fix issues in long continuous runs.",
+  "plugins": [
+    {
+      "name": "roblox-playtest-fix",
+      "source": "./",
+      "displayName": "Roblox Autonomous Playtest & Fix",
+      "description": "Autonomously playtest a Roblox game in Studio via MCP, hunt for bugs, unexpected behaviors, annoying controls, and irritating configurations for the target audience, and fix them in long continuous find-reproduce-fix-verify runs.",
+      "version": "1.0.0",
+      "license": "MIT",
+      "category": "testing",
+      "keywords": [
+        "roblox",
+        "roblox-studio",
+        "mcp",
+        "luau",
+        "playtest",
+        "qa",
+        "game-feel",
+        "autonomous-testing"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "roblox-playtest-fix",
+  "version": "1.0.0",
+  "description": "Autonomously playtest a Roblox game in Studio via MCP, hunt for bugs, unexpected behaviors, annoying controls, and irritating configurations for the target audience, and fix them in long continuous runs.",
+  "contextFileName": "AGENTS.md"
+}

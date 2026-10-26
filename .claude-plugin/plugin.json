@@ -1,0 +1,25 @@
+{
+  "name": "roblox-playtest-fix",
+  "displayName": "Roblox Autonomous Playtest & Fix",
+  "description": "Harness-agnostic skill that autonomously playtests a Roblox game in Studio via MCP, hunts for bugs, unexpected behaviors, annoying controls, and irritating configurations for the target audience, and fixes them in long continuous find-reproduce-fix-verify runs.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Shane Hamilton"
+  },
+  "homepage": "https://github.com/shanemhamilton/roblox-playtest-fix",
+  "repository": "https://github.com/shanemhamilton/roblox-playtest-fix",
+  "license": "MIT",
+  "keywords": [
+    "roblox",
+    "roblox-studio",
+    "mcp",
+    "luau",
+    "playtest",
+    "qa",
+    "game-feel",
+    "autonomous-testing",
+    "claude-code",
+    "codex",
+    "antigravity"
+  ]
+}
